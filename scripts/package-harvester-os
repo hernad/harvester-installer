@@ -9,11 +9,14 @@ mkdir -p ${ARTIFACTS_DIR}
 
 source ${SCRIPTS_DIR}/version
 
-BASE_OS_IMAGE="rancher/harvester-os:dev-head"
+BASE_OS_IMAGE="rancher/harvester-os:my-dev"
 HARVESTER_OS_IMAGE=rancher/harvester-os:$VERSION
 
+#--pull                    Always attempt to pull a newer version of the image
+
 cd ${PACKAGE_HARVESTER_OS_DIR}
-docker build --pull \
+#docker build --pull \
+docker build \
 	--build-arg BASE_OS_IMAGE="${BASE_OS_IMAGE}" \
 	--build-arg HARVESTER_INSTALLER_VERSION="${VERSION}" \
 	-t ${HARVESTER_OS_IMAGE} .
