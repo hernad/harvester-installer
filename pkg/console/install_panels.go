@@ -11,8 +11,6 @@ import (
 	"github.com/imdario/mergo"
 	"github.com/jroimartin/gocui"
 	"github.com/sirupsen/logrus"
-	"github.com/vishvananda/netlink"
-	"golang.org/x/sys/unix"
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/harvester/harvester-installer/pkg/config"
@@ -43,7 +41,9 @@ var (
 	userInputData = UserInputData{
 		NTPServers: "0.suse.pool.ntp.org",
 	}
-	mgmtNetwork = config.Network{}
+	mgmtNetwork = config.Network{
+		DefaultRoute: true,
+	}
 )
 
 func (c *Console) layoutInstall(g *gocui.Gui) error {
@@ -551,9 +551,9 @@ func addTokenPanel(c *Console) error {
 
 func showNetworkPage(c *Console) error {
 	if mgmtNetwork.Method != config.NetworkMethodStatic {
-		return showNext(c, askInterfacePanel, askNetworkMethodPanel, hostNamePanel)
+		return showNext(c, askInterfacePanel, askBondModePanel, askNetworkMethodPanel, hostNamePanel)
 	}
-	return showNext(c, askInterfacePanel, askNetworkMethodPanel, addressPanel, gatewayPanel, dnsServersPanel, hostNamePanel)
+	return showNext(c, askInterfacePanel, askBondModePanel, askNetworkMethodPanel, addressPanel, gatewayPanel, dnsServersPanel, hostNamePanel)
 }
 
 func addNetworkPanel(c *Console) error {
@@ -581,6 +581,11 @@ func addNetworkPanel(c *Console) error {
 	}
 
 	askInterfaceV, err := widgets.NewDropDown(c.Gui, askInterfacePanel, askInterfaceLabel, getNetworkInterfaceOptions)
+	if err != nil {
+		return err
+	}
+
+	askBondModeV, err := widgets.NewDropDown(c.Gui, askBondModePanel, askBondModeLabel, getBondModeOptions)
 	if err != nil {
 		return err
 	}
@@ -635,6 +640,7 @@ func addNetworkPanel(c *Console) error {
 		c.CloseElements(
 			hostNamePanel,
 			askInterfacePanel,
+			askBondModePanel,
 			askNetworkMethodPanel,
 			addressPanel,
 			gatewayPanel,
@@ -643,7 +649,9 @@ func addNetworkPanel(c *Console) error {
 	}
 
 	setupNetwork := func() ([]byte, error) {
-		return applyNetworks([]config.Network{mgmtNetwork})
+		return applyNetworks(map[string]config.Network{
+			config.MgmtInterfaceName: mgmtNetwork,
+		})
 	}
 
 	preGotoNextPage := func() (string, error) {
@@ -653,8 +661,23 @@ func addNetworkPanel(c *Console) error {
 		}
 		logrus.Infof("Network configuration is applied: %s", output)
 
-		c.config.Networks = []config.Network{
-			mgmtNetwork,
+		c.config.Networks = map[string]config.Network{
+			config.MgmtInterfaceName: mgmtNetwork,
+		}
+
+		if mgmtNetwork.Method == config.NetworkMethodDHCP {
+			if addr, err := getIPThroughDHCP(config.MgmtInterfaceName); err != nil {
+				return fmt.Sprintf("Requesting IP through DHCP failed: %s", err.Error()), nil
+			} else {
+				logrus.Infof("DHCP test passed. Got IP: %s", addr)
+				userInputData.Address = ""
+				userInputData.DNSServers = ""
+				mgmtNetwork.IP = ""
+				mgmtNetwork.SubnetMask = ""
+				mgmtNetwork.Gateway = ""
+				mgmtNetwork.DNSNameservers = nil
+				c.config.OS.DNSNameservers = nil
+			}
 		}
 		return "", nil
 	}
@@ -735,26 +758,27 @@ func addNetworkPanel(c *Console) error {
 
 	// askInterfaceV
 	interfaceVConfirm := func(g *gocui.Gui, v *gocui.View) error {
-		selected, err := askInterfaceV.GetData()
-		if err != nil {
-			return err
-		}
 		c.CloseElement(networkValidatorPanel)
-		switch nicState := getNICState(selected); nicState {
-		case NICStateNotFound:
-			return updateValidatorMessage(fmt.Sprintf("NIC %s not found", selected))
-		case NICStateDown:
-			return updateValidatorMessage(fmt.Sprintf("NIC %s is down", selected))
-		case NICStateLowerDown:
-			return updateValidatorMessage(fmt.Sprintf("NIC %s is down\nNetwork cable isn't plugged in", selected))
+		ifaces := askInterfaceV.GetMultiData()
+		if len(ifaces) == 0 {
+			return updateValidatorMessage("Must select at least once interface")
 		}
-		c.config.Install.MgmtInterface = selected
-		mgmtNetwork.Interface = selected
-		if mgmtNetwork.Method != config.NetworkMethodStatic {
-			return showNext(c, askNetworkMethodPanel)
+		interfaces := make([]config.NetworkInterface, 0, len(ifaces))
+		for _, iface := range ifaces {
+			switch nicState := getNICState(iface); nicState {
+			case NICStateNotFound:
+				return updateValidatorMessage(fmt.Sprintf("NIC %s not found", iface))
+			case NICStateDown:
+				return updateValidatorMessage(fmt.Sprintf("NIC %s is down", iface))
+			case NICStateLowerDown:
+				return updateValidatorMessage(fmt.Sprintf("NIC %s is down\nNetwork cable isn't plugged in", iface))
+			}
+			interfaces = append(interfaces, config.NetworkInterface{Name: iface})
 		}
-		return showNext(c, dnsServersPanel, gatewayPanel, addressPanel, askNetworkMethodPanel)
+		mgmtNetwork.Interfaces = interfaces
+		return showNext(c, askBondModePanel)
 	}
+	askInterfaceV.SetMulti(true)
 	askInterfaceV.KeyBindings = map[gocui.Key]func(*gocui.Gui, *gocui.View) error{
 		gocui.KeyArrowUp:   gotoNextPanel(c, []string{hostNamePanel}),
 		gocui.KeyArrowDown: interfaceVConfirm,
@@ -764,6 +788,33 @@ func addNetworkPanel(c *Console) error {
 	setLocation(askInterfaceV.Panel, 3)
 	c.AddElement(askInterfacePanel, askInterfaceV)
 
+	// askBondModeV
+	askBondModeV.PreShow = func() error {
+		if mgmtNetwork.BondOption.Mode == "" {
+			askBondModeV.Value = config.BondModeBalanceTLB
+		}
+		return nil
+	}
+	askBondModeVConfirm := func(g *gocui.Gui, v *gocui.View) error {
+		mode, err := askBondModeV.GetData()
+		mgmtNetwork.BondOption.Mode = mode
+		if err != nil {
+			return err
+		}
+		if mgmtNetwork.Method != config.NetworkMethodStatic {
+			return showNext(c, askNetworkMethodPanel)
+		}
+		return showNext(c, dnsServersPanel, gatewayPanel, addressPanel, askNetworkMethodPanel)
+	}
+	askBondModeV.KeyBindings = map[gocui.Key]func(*gocui.Gui, *gocui.View) error{
+		gocui.KeyArrowUp:   gotoNextPanel(c, []string{askInterfacePanel}),
+		gocui.KeyArrowDown: askBondModeVConfirm,
+		gocui.KeyEnter:     askBondModeVConfirm,
+		gocui.KeyEsc:       gotoPrevPage,
+	}
+	setLocation(askBondModeV.Panel, 3)
+	c.AddElement(askBondModePanel, askBondModeV)
+
 	// askNetworkMethodV
 	askNetworkMethodVConfirm := func(g *gocui.Gui, _ *gocui.View) error {
 		selected, err := askNetworkMethodV.GetData()
@@ -771,44 +822,15 @@ func addNetworkPanel(c *Console) error {
 			return err
 		}
 		mgmtNetwork.Method = selected
-
 		if selected == config.NetworkMethodStatic {
 			return showNext(c, dnsServersPanel, gatewayPanel, addressPanel)
 		}
 
 		c.CloseElements(dnsServersPanel, gatewayPanel, addressPanel)
-		if err := networkValidatorV.Show(); err != nil {
-			return err
-		}
-		spinner := NewFocusSpinner(g, networkValidatorPanel, fmt.Sprintf("Requesting IP through DHCP..."))
-		spinner.Start()
-		go func(g *gocui.Gui) {
-			addr, err := getIPThroughDHCP(mgmtNetwork.Interface)
-			if err != nil {
-				spinner.Stop(true, fmt.Sprintf("Requesting IP through DHCP failed: %s", err))
-				g.Update(func(g *gocui.Gui) error {
-					return showNext(c, askNetworkMethodPanel)
-				})
-			} else {
-				logrus.Infof("DHCP test passed. Got IP: %s", addr)
-				userInputData.Address = ""
-				userInputData.DNSServers = ""
-				mgmtNetwork.IP = ""
-				mgmtNetwork.SubnetMask = ""
-				mgmtNetwork.Gateway = ""
-				mgmtNetwork.DNSNameservers = nil
-				c.config.OS.DNSNameservers = nil
-
-				spinner.Stop(false, "")
-				g.Update(func(g *gocui.Gui) error {
-					return gotoNextPage(askNetworkMethodPanel)
-				})
-			}
-		}(c.Gui)
-		return nil
+		return gotoNextPage(askNetworkMethodPanel)
 	}
 	askNetworkMethodV.KeyBindings = map[gocui.Key]func(*gocui.Gui, *gocui.View) error{
-		gocui.KeyArrowUp:   gotoNextPanel(c, []string{askInterfacePanel}),
+		gocui.KeyArrowUp:   gotoNextPanel(c, []string{askBondModePanel}),
 		gocui.KeyArrowDown: askNetworkMethodVConfirm,
 		gocui.KeyEnter:     askNetworkMethodVConfirm,
 		gocui.KeyEsc:       gotoPrevPage,
@@ -940,39 +962,46 @@ func addNetworkPanel(c *Console) error {
 	return nil
 }
 
-func getNICState(name string) int {
-	link, err := netlink.LinkByName(name)
-	if err != nil {
-		return NICStateNotFound
-	}
-	up := link.Attrs().RawFlags&unix.IFF_UP != 0
-	lowerUp := link.Attrs().RawFlags&unix.IFF_LOWER_UP != 0
-	if !up {
-		return NICStateDown
-	}
-	if !lowerUp {
-		return NICStateLowerDown
-	}
-	return NICStateUP
+func getBondModeOptions() ([]widgets.Option, error) {
+	return []widgets.Option{
+		{
+			Value: config.BondModeBalanceRR,
+			Text:  config.BondModeBalanceRR,
+		},
+		{
+			Value: config.BondModeActiveBackup,
+			Text:  config.BondModeActiveBackup,
+		},
+		{
+			Value: config.BondModeBalnaceXOR,
+			Text:  config.BondModeBalnaceXOR,
+		},
+		{
+			Value: config.BondModeBroadcast,
+			Text:  config.BondModeBroadcast,
+		},
+		{
+			Value: config.BondModeIEEE802_3ad,
+			Text:  config.BondModeIEEE802_3ad,
+		},
+		{
+			Value: config.BondModeBalanceTLB,
+			Text:  config.BondModeBalanceTLB,
+		},
+		{
+			Value: config.BondModeBalanceALB,
+			Text:  config.BondModeBalanceALB,
+		},
+	}, nil
 }
 
 func getNetworkInterfaceOptions() ([]widgets.Option, error) {
 	var options = []widgets.Option{}
-	ifaces, err := net.Interfaces()
+	ifaces, err := getNetworkInterfaces()
 	if err != nil {
 		return nil, err
 	}
 	for _, i := range ifaces {
-		if i.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		link, err := netlink.LinkByName(i.Name)
-		if err != nil {
-			return nil, err
-		}
-		if link.Type() != "device" {
-			continue
-		}
 		addrs, err := i.Addrs()
 		if err != nil {
 			return nil, err
@@ -1254,8 +1283,9 @@ func addInstallPanel(c *Console) error {
 			}
 
 			// case insensitive for network method and vip mode
-			for i, network := range c.config.Networks {
-				c.config.Networks[i].Method = strings.ToLower(network.Method)
+			for key, network := range c.config.Networks {
+				network.Method = strings.ToLower(network.Method)
+				c.config.Networks[key] = network
 			}
 			c.config.VipMode = strings.ToLower(c.config.VipMode)
 
@@ -1346,7 +1376,7 @@ func addVIPPanel(c *Console) error {
 			spinner := NewSpinner(c.Gui, vipTextPanel, "Requesting IP through DHCP...")
 			spinner.Start()
 			go func(g *gocui.Gui) {
-				vip, err := getVipThroughDHCP(mgmtNetwork.Interface)
+				vip, err := getVipThroughDHCP(config.MgmtInterfaceName)
 				if err != nil {
 					spinner.Stop(true, err.Error())
 					g.Update(func(g *gocui.Gui) error {

@@ -1,9 +1,14 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/harvester/harvester-installer/pkg/util"
 	yipSchema "github.com/mudler/yip/pkg/schema"
@@ -16,11 +21,18 @@ const (
 	canalConfig        = "rke2-canal-config.yaml"
 	harvesterConfig    = "harvester-config.yaml"
 	ntpdService        = "systemd-timesyncd"
+
+	networkConfigDirectory = "/etc/sysconfig/network/"
+	ifcfgGlobPattern       = networkConfigDirectory + "ifcfg-*"
+	ifrouteGlobPattern     = networkConfigDirectory + "ifroute-*"
 )
 
 var (
 	// RKE2Version is replaced by ldflags
 	RKE2Version = ""
+
+	originalNetworkConfigs        = make(map[string][]byte)
+	saveOriginalNetworkConfigOnce sync.Once
 )
 
 // ConvertToCOS converts HarvesterConfig to cOS configuration.
@@ -79,24 +91,6 @@ func ConvertToCOS(config *HarvesterConfig) (*yipSchema.YipConfig, error) {
 
 	initramfs.Environment = cfg.OS.Environment
 
-	// ensure network that contains mgmtInterface exists
-	if cfg.MgmtInterface != "" {
-		mgmtInterfaceNetwork := false
-		for _, network := range cfg.Networks {
-			if network.Interface == cfg.MgmtInterface {
-				mgmtInterfaceNetwork = true
-				break
-			}
-		}
-
-		if !mgmtInterfaceNetwork {
-			cfg.Networks = append(cfg.Networks, Network{
-				Interface: cfg.MgmtInterface,
-				Method:    NetworkMethodDHCP,
-			})
-		}
-	}
-
 	if err := UpdateNetworkConfig(&initramfs, cfg.Networks, false); err != nil {
 		return nil, err
 	}
@@ -110,19 +104,17 @@ func ConvertToCOS(config *HarvesterConfig) (*yipSchema.YipConfig, error) {
 			Group:       0,
 		})
 
-		if cfg.Install.MgmtInterface != "" {
-			canalHelmChartConfig, err := render(canalConfig, config)
-			if err != nil {
-				return nil, err
-			}
-			initramfs.Files = append(initramfs.Files, yipSchema.File{
-				Path:        manifestsDirectory + canalConfig,
-				Content:     canalHelmChartConfig,
-				Permissions: 0600,
-				Owner:       0,
-				Group:       0,
-			})
+		canalHelmChartConfig, err := render(canalConfig, config)
+		if err != nil {
+			return nil, err
 		}
+		initramfs.Files = append(initramfs.Files, yipSchema.File{
+			Path:        manifestsDirectory + canalConfig,
+			Content:     canalHelmChartConfig,
+			Permissions: 0600,
+			Owner:       0,
+			Group:       0,
+		})
 
 		if cfg.Install.Vip != "" {
 			harvesterHelmChartConfig, err := render(harvesterConfig, config)
@@ -217,44 +209,127 @@ func initRancherdStage(config *HarvesterConfig, stage *yipSchema.Stage) error {
 	return nil
 }
 
+// RestoreOriginalNetworkConfig restores the previous state of network
+// configurations saved by `SaveOriginalNetworkConfig`.
+func RestoreOriginalNetworkConfig() error {
+	if len(originalNetworkConfigs) == 0 {
+		return nil
+	}
+
+	remove := func(pattern string) error {
+		paths, err := filepath.Glob(pattern)
+		if err != nil {
+			return err
+		}
+		for _, path := range paths {
+			if err := os.Remove(path); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	if err := remove(ifrouteGlobPattern); err != nil {
+		return err
+	}
+	if err := remove(ifcfgGlobPattern); err != nil {
+		return err
+	}
+
+	for name, bytes := range originalNetworkConfigs {
+		if err := ioutil.WriteFile(fmt.Sprintf("/etc/sysconfig/network/%s", name), bytes, os.FileMode(0600)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SaveOriginalNetworkConfig saves the current state of network configurations.
+// Namely
+// - all `/etc/sysconfig/network/ifroute-*` files, and
+// - all `/etc/sysconfig/network/ifcfg-*` files
+//
+// It can only be invoked once for the whole lifetime of this program.
+func SaveOriginalNetworkConfig() error {
+	var err error
+
+	saveOriginalNetworkConfigOnce.Do(func() {
+		save := func(pattern string) error {
+			filepaths, err := filepath.Glob(pattern)
+			if err != nil {
+				return err
+			}
+			for _, path := range filepaths {
+				if bytes, err := ioutil.ReadFile(path); err != nil {
+					return err
+				} else {
+					originalNetworkConfigs[filepath.Base(path)] = bytes
+				}
+			}
+			return nil
+		}
+
+		if err = save(ifrouteGlobPattern); err != nil {
+			return
+		}
+		err = save(ifcfgGlobPattern)
+		return
+	})
+
+	return err
+}
+
 // UpdateNetworkConfig updates a cOS config stage to include steps that:
 // - generates wicked interface files (`/etc/sysconfig/network/ifcfg-*` and `ifroute-*`)
 // - manipulates nameservers in `/etc/resolv.conf`.
-// - call `wicked ifreload <interface...>` if `run` flag is true.
-func UpdateNetworkConfig(stage *yipSchema.Stage, networks []Network, run bool) error {
-	var interfaces []string
+// - call `wicked ifreload all` if `run` flag is true.
+func UpdateNetworkConfig(stage *yipSchema.Stage, networks map[string]Network, run bool) error {
 	var staticDNSServers []string
 
-	for _, network := range networks {
-		interfaces = append(interfaces, network.Interface)
-		var templ string
-		switch network.Method {
-		case NetworkMethodDHCP:
-			templ = "wicked-ifcfg-dhcp"
-		case NetworkMethodStatic:
-			templ = "wicked-ifcfg-static"
-		default:
+	mgmtNetwork, ok := networks[MgmtInterfaceName]
+	if !ok {
+		return errors.New("no management network defined")
+	}
+	if len(mgmtNetwork.Interfaces) == 0 {
+		return errors.New("no slave defined for management network bond")
+	}
+
+	// Check if we have the only one default route.
+	// If not, set mgmtNetwork as the default route.
+	defaultRoute := ""
+	for name, network := range networks {
+		if network.DefaultRoute {
+			if defaultRoute != "" {
+				return fmt.Errorf("multi default route found: %s and %s", defaultRoute, name)
+			}
+			defaultRoute = name
+		}
+	}
+	if defaultRoute == "" {
+		mgmtNetwork.DefaultRoute = true
+		networks[MgmtInterfaceName] = mgmtNetwork
+	}
+
+	for name, network := range networks {
+		if network.Method != NetworkMethodDHCP && network.Method != NetworkMethodStatic {
 			return fmt.Errorf("unsupported network method %s", network.Method)
 		}
 
-		ifcfg, err := render(templ, network)
+		var err error
+		if len(network.Interfaces) > 0 {
+			err = updateBond(stage, name, &network)
+		} else {
+			err = updateNIC(stage, name, &network)
+		}
 		if err != nil {
 			return err
 		}
 
-		stage.Files = append(stage.Files, yipSchema.File{
-			Path:        fmt.Sprintf("/etc/sysconfig/network/ifcfg-%s", network.Interface),
-			Content:     ifcfg,
-			Permissions: 0600,
-			Owner:       0,
-			Group:       0,
-		})
-
 		// default gateway for static mode
 		if network.Method == NetworkMethodStatic {
 			stage.Files = append(stage.Files, yipSchema.File{
-				Path:        fmt.Sprintf("/etc/sysconfig/network/ifroute-%s", network.Interface),
-				Content:     fmt.Sprintf("default %s - %s\n", network.Gateway, network.Interface),
+				Path:        fmt.Sprintf("/etc/sysconfig/network/ifroute-%s", name),
+				Content:     fmt.Sprintf("default %s - %s\n", network.Gateway, name),
 				Permissions: 0600,
 				Owner:       0,
 				Group:       0,
@@ -262,7 +337,7 @@ func UpdateNetworkConfig(stage *yipSchema.Stage, networks []Network, run bool) e
 		}
 
 		if network.Method == NetworkMethodDHCP {
-			stage.Commands = append(stage.Commands, fmt.Sprintf("rm -f /etc/sysconfig/network/ifroute-%s", network.Interface))
+			stage.Commands = append(stage.Commands, fmt.Sprintf("rm -f /etc/sysconfig/network/ifroute-%s", name))
 		}
 
 		for _, nameServer := range network.DNSNameservers {
@@ -280,10 +355,59 @@ func UpdateNetworkConfig(stage *yipSchema.Stage, networks []Network, run bool) e
 	}
 
 	if run {
-		stage.Commands = append(stage.Commands, fmt.Sprintf("wicked ifreload %s", strings.Join(interfaces, " ")))
+		stage.Commands = append(stage.Commands, fmt.Sprintf("wicked ifreload all"))
 
 		// in case wicked config is not changed and netconfig is not called
 		stage.Commands = append(stage.Commands, "netconfig update")
+	}
+
+	return nil
+}
+
+func updateNIC(stage *yipSchema.Stage, name string, network *Network) error {
+	ifcfg, err := render("wicked-ifcfg-eth", network)
+	if err != nil {
+		return err
+	}
+
+	stage.Files = append(stage.Files, yipSchema.File{
+		Path:        fmt.Sprintf("/etc/sysconfig/network/ifcfg-%s", name),
+		Content:     ifcfg,
+		Permissions: 0600,
+		Owner:       0,
+		Group:       0,
+	})
+	return nil
+}
+
+func updateBond(stage *yipSchema.Stage, name string, network *Network) error {
+	ifcfg, err := render("wicked-ifcfg-bond-master", network)
+	if err != nil {
+		return err
+	}
+
+	// bond master
+	stage.Files = append(stage.Files, yipSchema.File{
+		Path:        fmt.Sprintf("/etc/sysconfig/network/ifcfg-%s", name),
+		Content:     ifcfg,
+		Permissions: 0600,
+		Owner:       0,
+		Group:       0,
+	})
+
+	// bond slaves
+	for _, iface := range network.Interfaces {
+		ifcfg, err := render("wicked-ifcfg-bond-slave", iface)
+		if err != nil {
+			return err
+		}
+		stage.Files = append(stage.Files, yipSchema.File{
+			Path:        fmt.Sprintf("/etc/sysconfig/network/ifcfg-%s", iface.Name),
+			Content:     ifcfg,
+			Permissions: 0600,
+			Owner:       0,
+			Group:       0,
+		})
 	}
 
 	return nil

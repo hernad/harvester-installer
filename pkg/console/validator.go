@@ -17,13 +17,14 @@ var (
 	ErrMsgModeUnknown                   = "unknown mode"
 	ErrMsgTokenNotSpecified             = "token not specified"
 
-	ErrMsgMgmtInterfaceNotSpecified = "no management interface specified"
-	ErrMsgInterfaceNotSpecified     = "no interface specified"
-	ErrMsgInterfaceNotFound         = "interface not found"
-	ErrMsgInterfaceIsLoop           = "interface is a loopback interface"
-	ErrMsgDeviceNotSpecified        = "no device specified"
-	ErrMsgDeviceNotFound            = "device not found"
-	ErrMsgNoCredentials             = "no SSH authorized keys or passwords are set"
+	ErrMsgMgmtInterfaceNotSpecified    = "no management interface specified"
+	ErrMsgInterfaceNotSpecified        = "no interface specified"
+	ErrMsgInterfaceNotSpecifiedForMgmt = "no interface specified for management network"
+	ErrMsgInterfaceNotFound            = "interface not found"
+	ErrMsgInterfaceIsLoop              = "interface is a loopback interface"
+	ErrMsgDeviceNotSpecified           = "no device specified"
+	ErrMsgDeviceNotFound               = "device not found"
+	ErrMsgNoCredentials                = "no SSH authorized keys or passwords are set"
 
 	ErrMsgNetworkMethodUnknown = "unknown network method"
 )
@@ -39,23 +40,29 @@ func prettyError(errMsg string, value string) error {
 	return errors.Errorf("%s: %s", errMsg, value)
 }
 
-func checkInterface(name string) error {
-	if name == "" {
+func checkInterface(iface config.NetworkInterface) error {
+	// For now we only accept interface name but not device specifier.
+	if iface.Name == "" {
 		return errors.New(ErrMsgInterfaceNotSpecified)
 	}
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return err
 	}
+
+	checkFlags := func(flags net.Flags, name string) error {
+		if flags&net.FlagLoopback != 0 {
+			return prettyError(ErrMsgInterfaceIsLoop, name)
+		}
+		return nil
+	}
+
 	for _, i := range ifaces {
-		if i.Name == name {
-			if i.Flags&net.FlagLoopback != 0 {
-				return prettyError(ErrMsgInterfaceIsLoop, name)
-			}
-			return nil
+		if i.Name == iface.Name {
+			return checkFlags(i.Flags, iface.Name)
 		}
 	}
-	return prettyError(ErrMsgInterfaceNotFound, name)
+	return prettyError(ErrMsgInterfaceNotFound, iface.Name)
 }
 
 func checkDevice(device string) error {
@@ -119,12 +126,23 @@ func checkIPList(ipList []string) error {
 	return nil
 }
 
-func checkNetworks(networks []config.Network) error {
-	for _, network := range networks {
-		if err := checkInterface(network.Interface); err != nil {
-			return err
-		}
+func checkNetworks(networks map[string]config.Network) error {
+	if len(networks) == 0 {
+		return errors.New(ErrMsgMgmtInterfaceNotSpecified)
+	}
 
+	if mgmtNetwork, ok := networks[config.MgmtInterfaceName]; !ok {
+		return errors.New(ErrMsgMgmtInterfaceNotSpecified)
+	} else if len(mgmtNetwork.Interfaces) == 0 {
+		return errors.New(ErrMsgInterfaceNotSpecifiedForMgmt)
+	}
+
+	for _, network := range networks {
+		for _, iface := range network.Interfaces {
+			if err := checkInterface(iface); err != nil {
+				return err
+			}
+		}
 		switch network.Method {
 		case config.NetworkMethodDHCP, "":
 			return nil
@@ -181,14 +199,6 @@ func checkVip(vip, vipHwAddr, vipMode string) error {
 }
 
 func (v ConfigValidator) Validate(cfg *config.HarvesterConfig) error {
-	if cfg.Install.Mode == config.ModeCreate && cfg.Install.MgmtInterface == "" {
-		return errors.New(ErrMsgMgmtInterfaceNotSpecified)
-	}
-
-	if err := checkInterface(cfg.Install.MgmtInterface); err != nil {
-		return err
-	}
-
 	if err := checkDevice(cfg.Install.Device); err != nil {
 		return err
 	}
