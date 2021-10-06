@@ -18,6 +18,7 @@ var (
 	ErrMsgTokenNotSpecified             = "token not specified"
 
 	ErrMsgMgmtInterfaceNotSpecified    = "no management interface specified"
+	ErrMsgMgmtInterfaceInvalidMethod   = "management network must configure with either static or DHCP method"
 	ErrMsgInterfaceNotSpecified        = "no interface specified"
 	ErrMsgInterfaceNotSpecifiedForMgmt = "no interface specified for management network"
 	ErrMsgInterfaceNotFound            = "interface not found"
@@ -88,13 +89,6 @@ func checkStaticRequiredString(field, value string) error {
 	return nil
 }
 
-func checkStaticRequiredSlice(field string, value []string) error {
-	if len(value) == 0 {
-		return fmt.Errorf("must specify %s in static method", field)
-	}
-	return nil
-}
-
 func checkDomain(domain string) error {
 	if errs := validation.IsDNS1123Subdomain(domain); len(errs) > 0 {
 		return fmt.Errorf("%s is not a valid domain", domain)
@@ -133,8 +127,14 @@ func checkNetworks(networks map[string]config.Network) error {
 
 	if mgmtNetwork, ok := networks[config.MgmtInterfaceName]; !ok {
 		return errors.New(ErrMsgMgmtInterfaceNotSpecified)
-	} else if len(mgmtNetwork.Interfaces) == 0 {
-		return errors.New(ErrMsgInterfaceNotSpecifiedForMgmt)
+	} else {
+		if len(mgmtNetwork.Interfaces) == 0 {
+			return errors.New(ErrMsgInterfaceNotSpecifiedForMgmt)
+		}
+		method := mgmtNetwork.Method
+		if method != config.NetworkMethodDHCP && method != config.NetworkMethodStatic {
+			return errors.New(ErrMsgMgmtInterfaceInvalidMethod)
+		}
 	}
 
 	for _, network := range networks {
@@ -144,7 +144,7 @@ func checkNetworks(networks map[string]config.Network) error {
 			}
 		}
 		switch network.Method {
-		case config.NetworkMethodDHCP, "":
+		case config.NetworkMethodDHCP, config.NetworkMethodNone, "":
 			return nil
 		case config.NetworkMethodStatic:
 			if err := checkStaticRequiredString("ip", network.IP); err != nil {
@@ -165,12 +165,6 @@ func checkNetworks(networks map[string]config.Network) error {
 			if err := checkIP(network.Gateway); err != nil {
 				return err
 			}
-			if err := checkStaticRequiredSlice("dns servers", network.DNSNameservers); err != nil {
-				return err
-			}
-			if err := checkIPList(network.DNSNameservers); err != nil {
-				return err
-			}
 		default:
 			return prettyError(ErrMsgNetworkMethodUnknown, network.Method)
 		}
@@ -189,7 +183,7 @@ func checkVip(vip, vipHwAddr, vipMode string) error {
 		if err := checkHwAddr(vipHwAddr); err != nil {
 			return err
 		}
-	case config.NetworkMethodStatic:
+	case config.NetworkMethodStatic, config.NetworkMethodNone:
 		return nil
 	default:
 		return prettyError(ErrMsgNetworkMethodUnknown, vipMode)

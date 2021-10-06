@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/harvester/harvester-installer/pkg/util"
 	yipSchema "github.com/mudler/yip/pkg/schema"
 	"github.com/sirupsen/logrus"
 )
@@ -284,8 +283,6 @@ func SaveOriginalNetworkConfig() error {
 // - manipulates nameservers in `/etc/resolv.conf`.
 // - call `wicked ifreload all` if `run` flag is true.
 func UpdateNetworkConfig(stage *yipSchema.Stage, networks map[string]Network, run bool) error {
-	var staticDNSServers []string
-
 	mgmtNetwork, ok := networks[MgmtInterfaceName]
 	if !ok {
 		return errors.New("no management network defined")
@@ -311,7 +308,9 @@ func UpdateNetworkConfig(stage *yipSchema.Stage, networks map[string]Network, ru
 	}
 
 	for name, network := range networks {
-		if network.Method != NetworkMethodDHCP && network.Method != NetworkMethodStatic {
+		switch network.Method {
+		case NetworkMethodDHCP, NetworkMethodStatic, NetworkMethodNone:
+		default:
 			return fmt.Errorf("unsupported network method %s", network.Method)
 		}
 
@@ -325,8 +324,9 @@ func UpdateNetworkConfig(stage *yipSchema.Stage, networks map[string]Network, ru
 			return err
 		}
 
-		// default gateway for static mode
-		if network.Method == NetworkMethodStatic {
+		switch network.Method {
+		case NetworkMethodStatic:
+			// default gateway for static mode
 			stage.Files = append(stage.Files, yipSchema.File{
 				Path:        fmt.Sprintf("/etc/sysconfig/network/ifroute-%s", name),
 				Content:     fmt.Sprintf("default %s - %s\n", network.Gateway, name),
@@ -334,24 +334,9 @@ func UpdateNetworkConfig(stage *yipSchema.Stage, networks map[string]Network, ru
 				Owner:       0,
 				Group:       0,
 			})
-		}
-
-		if network.Method == NetworkMethodDHCP {
+		case NetworkMethodDHCP, NetworkMethodNone:
 			stage.Commands = append(stage.Commands, fmt.Sprintf("rm -f /etc/sysconfig/network/ifroute-%s", name))
 		}
-
-		for _, nameServer := range network.DNSNameservers {
-			if util.StringSliceContains(staticDNSServers, nameServer) {
-				continue
-			}
-			staticDNSServers = append(staticDNSServers, nameServer)
-		}
-	}
-
-	// Set static DNS servers before wicked reload
-	if len(staticDNSServers) > 0 {
-		// Not using stage.Environment because it's run after stage.Commands in Yip
-		stage.Commands = append(stage.Commands, getAddStaticDNSServersCmd(staticDNSServers))
 	}
 
 	if run {
