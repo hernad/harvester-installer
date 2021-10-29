@@ -15,10 +15,6 @@ type NetworkInterface struct {
 	HwAddr string `json:"hwAddr,omitempty"`
 }
 
-type BondOption struct {
-	Mode string `json:"mode,omitempty"`
-}
-
 const (
 	BondModeBalanceRR    = "balance-rr"
 	BondModeActiveBackup = "active-backup"
@@ -36,7 +32,7 @@ type Network struct {
 	SubnetMask   string             `json:"subnetMask,omitempty"`
 	Gateway      string             `json:"gateway,omitempty"`
 	DefaultRoute bool               `json:"defaultRoute,omitempty"`
-	BondOption   BondOption         `json:"bondOption,omitempty"`
+	BondOptions  map[string]string  `json:"bondOptions,omitempty"`
 }
 
 type HTTPBasicAuth struct {
@@ -72,6 +68,7 @@ type Install struct {
 	NoFormat  bool   `json:"noFormat,omitempty"`
 	Debug     bool   `json:"debug,omitempty"`
 	TTY       string `json:"tty,omitempty"`
+	ForceGPT  bool   `json:"forceGpt,omitempty"`
 
 	Webhooks []Webhook `json:"webhooks,omitempty"`
 }
