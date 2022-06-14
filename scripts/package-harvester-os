@@ -1,6 +1,7 @@
 #!/bin/bash -e
 
 TOP_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )"
+echo $TOP_DIR
 ARTIFACTS_DIR="${TOP_DIR}/dist/artifacts"
 SCRIPTS_DIR="${TOP_DIR}/scripts"
 PACKAGE_HARVESTER_OS_DIR="${TOP_DIR}/package/harvester-os"
@@ -14,7 +15,7 @@ source ${SCRIPTS_DIR}/version-rancher
 source ${SCRIPTS_DIR}/version-harvester ${TOP_DIR}/../harvester
 source ${SCRIPTS_DIR}/version-monitoring
 
-BASE_OS_IMAGE="rancher/harvester-os:20220421"
+BASE_OS_IMAGE="rancher/harvester-os:20220606"
 HARVESTER_OS_IMAGE=rancher/harvester-os:$VERSION
 
 cd ${PACKAGE_HARVESTER_OS_DIR}
@@ -34,7 +35,7 @@ EOF
 # Collect dependencies' versions
 ${SCRIPTS_DIR}/collect-deps.sh harvester-release.yaml
 
-docker build --pull \
+docker build  \
 	--build-arg BASE_OS_IMAGE="${BASE_OS_IMAGE}" \
 	--build-arg HARVESTER_PRETTY_NAME="${PRETTY_NAME}" \
 	-t ${HARVESTER_OS_IMAGE} .
