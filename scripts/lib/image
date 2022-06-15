@@ -19,6 +19,7 @@ save_image_list()
 
   case $in_file in
     http*)
+      echo "in_file=$in_file"	    
       images=$(curl -sfL $in_file)
       ;;
     *)
