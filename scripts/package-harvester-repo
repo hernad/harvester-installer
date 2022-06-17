@@ -15,13 +15,15 @@ cd ${PACKAGE_HARVESTER_REPO_DIR}
 
 CLUSTER_REPO_IMAGE=rancher/harvester-cluster-repo:${VERSION}
 docker build -t ${CLUSTER_REPO_IMAGE} .
+docker tag ${CLUSTER_REPO_IMAGE} registry.bring.out.ba:5001/${CLUSTER_REPO_IMAGE}
+docker push registry.bring.out.ba:5001/${CLUSTER_REPO_IMAGE}
 
 repo_image_list_file="${IMAGES_DIR}/harvester-repo-images-${VERSION}.txt"
 repo_image_archive="${IMAGES_DIR}/harvester-repo-images-${VERSION}.tar"
 
 # Save the image
 cat << EOF > $repo_image_list_file
-docker.io/${CLUSTER_REPO_IMAGE}
+registry.bring.out.ba:5001/${CLUSTER_REPO_IMAGE}
 EOF
 docker image save -o $repo_image_archive $(<$repo_image_list_file)
 zstd --rm $repo_image_archive -o "${repo_image_archive}.zst"
