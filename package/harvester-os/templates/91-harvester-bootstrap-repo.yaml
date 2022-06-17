@@ -16,7 +16,7 @@ bootstrapResources:
       spec:
         containers:
         - name: httpd
-          image: $CLUSTER_REPO_IMAGE
+          image: registry.bring.out.ba:5001/$CLUSTER_REPO_IMAGE
           ports:
           - containerPort: 80
 - apiVersion: v1
