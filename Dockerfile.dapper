@@ -45,5 +45,7 @@ ENV DAPPER_RUN_ARGS "-v /run/containerd/containerd.sock:/run/containerd/containe
 ENV HOME ${DAPPER_SOURCE}
 WORKDIR ${DAPPER_SOURCE}
 
+COPY ./harvester $DAPPER_SOURCE/../harvester
+
 ENTRYPOINT ["./scripts/entry"]
 CMD ["ci"]
