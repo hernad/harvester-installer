@@ -7,7 +7,7 @@ get_url()
 
   if  [[ "$from" == "https://github.com/rancher/rke2/releases/download/v1.21.11+rke2r1/rke2-images.linux-amd64.tar.zst" ]]
   then
-     from="http://10.10.99.11/rke2-images.linux-amd64.tar.zst"
+     from="http://10.10.99.11/harvester/rke2-images.linux-amd64.tar.zst"
   fi
 
   echo "Download ${from} to ${save_to}..."
