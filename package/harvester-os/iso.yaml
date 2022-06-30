@@ -16,6 +16,7 @@ label: "COS_LIVE"
 luet:
   repositories:
     - name: cOS
+      reference: 00ed0f26a94fda8aa86c343cefca5b1acb0a1edf-repository.yaml
       enable: true
       urls:
         - quay.io/costoolkit/releases-green
