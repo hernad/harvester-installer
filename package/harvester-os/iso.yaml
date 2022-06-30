@@ -20,6 +20,5 @@ luet:
       urls:
         - quay.io/costoolkit/releases-green
       type: docker
-      reference: 00ed0f26a94fda8aa86c343cefca5b1acb0a1edf-repository.yaml
 squashfs_options:
   compression: xz
