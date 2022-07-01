@@ -20,7 +20,7 @@ luet:
       verify: false
       cached: true
       urls:
-        - registry.bring.out.ba:5001/costoolkit/releases-green
+        - quay.io/costoolkit/releases-teal
       type: docker
 squashfs_options:
   compression: xz
