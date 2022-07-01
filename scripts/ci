@@ -3,8 +3,8 @@ set -e
 
 cd $(dirname $0)
 
-./build
-./test
-./build-bundle
-./package-harvester-repo
+#./build
+#./test
+#./build-bundle
+#./package-harvester-repo
 ./package-harvester-os
