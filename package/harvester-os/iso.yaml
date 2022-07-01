@@ -17,6 +17,8 @@ luet:
   repositories:
     - name: cOS
       enable: true
+      verify: false
+      cached: true
       urls:
         - quay.io/costoolkit/releases-green
       type: docker
