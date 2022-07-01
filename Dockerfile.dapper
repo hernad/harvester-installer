@@ -1,5 +1,6 @@
-FROM quay.io/costoolkit/releases-green:luet-toolchain-0.22.7-5 as luet
+#FROM quay.io/costoolkit/releases-green:luet-toolchain-0.22.7-5 as luet
 #FROM quay.io/costoolkit/releases-green:luet-toolchain-0.32.5 as luet
+FROM quay.io/costoolkit/releases-green:luet-toolchain-0.32.0-2 as luet
 
 #FROM quay.io/costoolkit/releases-green:luet-makeiso-toolchain-0.4.0 as makeiso
 FROM quay.io/costoolkit/releases-green:luet-makeiso-toolchain-0.4.0-6 as makeiso
