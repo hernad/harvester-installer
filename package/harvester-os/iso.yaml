@@ -19,6 +19,7 @@ luet:
       enable: true
       verify: false
       cached: true
+      reference: v0.8.14-22
       urls:
         - quay.io/costoolkit/releases-green
       type: docker
