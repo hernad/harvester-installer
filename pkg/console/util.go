@@ -620,6 +620,7 @@ func canChooseDataDisk() (bool, error) {
 	lines := strings.Split(strings.TrimSuffix(string(output), "\n"), "\n")
 	var options []widgets.Option
 	for _, line := range lines {
+		logrus.Infof("canChooseDataDisk %s", line)
 		splits := strings.SplitN(line, " ", 2)
 		if len(splits) == 2 {
 			options = append(options, widgets.Option{
