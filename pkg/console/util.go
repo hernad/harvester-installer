@@ -613,7 +613,7 @@ func systemIsBIOS() bool {
 
 func canChooseDataDisk() (bool, error) {
 	// TODO This is a copy of getDiskOptions(). Deduplicate these two
-	output, err := exec.Command("/bin/sh", "-c", `lsblk -r -o KNAME,SIZE,TYPE |egrep -w "disk|lvm"|cut -d ' ' -f 1,2`).CombinedOutput()
+	output, err := exec.Command("/bin/sh", "-c", `lsblk -r -o KNAME,SIZE,TYPE |egrep -w 'disk|lvm'|cut -d ' ' -f 1,2`).CombinedOutput()
 	if err != nil {
 		return false, err
 	}
