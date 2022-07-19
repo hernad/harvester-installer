@@ -116,6 +116,7 @@ type Install struct {
 	ForceMBR bool   `json:"forceMbr,omitempty"`
 	DataDisk string `json:"dataDisk,omitempty"`
 	DataDiskFormat string `json:"dataDiskFormat,omitempty"`
+	DataDiskFormatOpts string `json:"dataDiskFormatOpts,omitempty"`
 
 	Webhooks []Webhook `json:"webhooks,omitempty"`
 }

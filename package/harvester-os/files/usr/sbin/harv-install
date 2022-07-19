@@ -368,6 +368,9 @@ do_data_disk_format()
 	    # force overwrite an existing file system
 	    format_opts="-f"
     fi
+    if [ -n "$HARVESTER_DATA_DISK_FORMAT_OPTS" ]; then
+	    format_opts="$format_opts $HARVESTER_DATA_DISK_FORMAT_OPTS"
+    fi
     echo "Formatting $HARVESTER_DATA_DISK ($data_disk_format, opts: $format_opts) as data disk..."
     mkfs.${data_disk_format} $format_opts -L "$DATA_DISK_FSLABEL" "$HARVESTER_DATA_DISK"
 }
