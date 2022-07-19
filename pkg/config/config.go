@@ -115,6 +115,7 @@ type Install struct {
 	// Following options are not cOS installer flag
 	ForceMBR bool   `json:"forceMbr,omitempty"`
 	DataDisk string `json:"dataDisk,omitempty"`
+	DataDiskFormat string `json:"dataDiskFormat,omitempty"`
 
 	Webhooks []Webhook `json:"webhooks,omitempty"`
 }

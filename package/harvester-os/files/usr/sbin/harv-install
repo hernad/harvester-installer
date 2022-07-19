@@ -355,8 +355,21 @@ do_data_disk_format()
     fi
 
     # Create one EXT4 partition
-    echo "Formatting $HARVESTER_DATA_DISK as data disk..."
-    mkfs.ext4 -F -L "$DATA_DISK_FSLABEL" "$HARVESTER_DATA_DISK"
+    local data_disk_format=$HARVESTER_DATA_DISK_FORMAT
+    local format_opts=""
+    if [ -z "$HARVESTER_DATA_DISK_FORMAT" ]; then
+	    data_disk_format="ext4"
+    fi
+    if [ "$HARVESTER_DATA_DISK_FORMAT" == "ext4" ];then
+            # force mke2fs to create filesystem, eiven if the specified device is not partition on o block special device
+	    format_opts="-F"
+    fi
+    if [ "$HARVESTER_DATA_DISK_FORMAT" == "xfs" ];then
+	    # force overwrite an existing file system
+	    format_opts="-f"
+    fi
+    echo "Formatting $HARVESTER_DATA_DISK ($data_disk_format, opts: $format_opts) as data disk..."
+    mkfs.${data_disk_format} $format_opts -L "$DATA_DISK_FSLABEL" "$HARVESTER_DATA_DISK"
 }
 
 trap cleanup exit

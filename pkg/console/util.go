@@ -444,6 +444,9 @@ func doInstall(g *gocui.Gui, hvstConfig *config.HarvesterConfig, webhooks Render
 	if hvstConfig.DataDisk != "" {
 		env = append(env, fmt.Sprintf("HARVESTER_DATA_DISK=%s", hvstConfig.DataDisk))
 	}
+	if hvstConfig.DataDiskFormat != "" {
+		env = append(env, fmt.Sprintf("HARVESTER_DATA_DISK_FORMAT=%s", hvstConfig.DataDiskFormat))
+	}
 
 	if err := execute(ctx, g, env, "/usr/sbin/harv-install"); err != nil {
 		webhooks.Handle(EventInstallFailed)
