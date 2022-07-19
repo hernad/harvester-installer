@@ -3,7 +3,7 @@
 ISOTEMP=""
 ISOMNT=/run/initramfs/live
 TARGET=/run/cos/target
-DATA_DISK_FSLABEL="HARV_LH_DEFAULT"
+DATA_DISK_FSLABEL="HARV_LH_DEF"
 
 # Update environment variables
 export ELEMENTAL_TARGET=$ELEMENTAL_DEVICE
