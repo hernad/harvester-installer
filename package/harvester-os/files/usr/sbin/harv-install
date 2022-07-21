@@ -392,7 +392,7 @@ echo "harv_install log" > $LOG_FILE
 
 OPTS=""
 if [ "$HARVESTER_NO_FORMAT" == "yes" ]; then
-  OPTS="--no-format"
+  OPTS="--no-format --force --force-gpt"
   echo "elemental NoFormat - preformated partitions COS_OEM, COS_STATE, COS_RECOVERY, COS_PERMANENT must exist" >> $LOG_FILE
 fi
 
