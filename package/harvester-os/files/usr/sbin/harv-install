@@ -387,8 +387,15 @@ fi
 
 clear_disk_label
 
+
+ELEMENTAL_OPTS=""
+if [ "$HARVESTER_NO_FORMAT" == "true" ]; then
+  ELEMENTAL_OPTS="--no-format"
+  echo "elemental NoFormat - preformated partitions COS_OEM, COS_STATE, COS_RECOVERY, COS_PERMANENT must exist"
+fi
+
 # Run elemental installer but do not let it fetch ISO and do not shutdown
-ELEMENTAL_ISO="" ELEMENTAL_TARGET="$install_device" ELEMENTAL_POWEROFF="" elemental ${QUIET} ${DEBUG} install
+ELEMENTAL_ISO="" ELEMENTAL_TARGET="$install_device" ELEMENTAL_POWEROFF="" elemental ${QUIET} ${DEBUG} ${ELEMENTAL_OPTS} install
 
 # Format the data disk if needed
 do_data_disk_format
