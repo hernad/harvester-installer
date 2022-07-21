@@ -20,7 +20,7 @@ luet:
       verify: false
       cached: true
       urls:
-        - quay.io/costoolkit/releases-teal
+        - quay.io/costoolkit/releases-green
       type: docker
 squashfs_options:
   compression: xz
