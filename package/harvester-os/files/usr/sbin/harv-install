@@ -389,7 +389,7 @@ clear_disk_label
 
 
 ELEMENTAL_OPTS=""
-if [ "$HARVESTER_NO_FORMAT" == "true" ]; then
+if [ "$HARVESTER_NO_FORMAT" == "yes" ]; then
   ELEMENTAL_OPTS="--no-format"
   echo "elemental NoFormat - preformated partitions COS_OEM, COS_STATE, COS_RECOVERY, COS_PERMANENT must exist"
 fi

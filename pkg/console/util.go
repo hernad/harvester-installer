@@ -450,8 +450,8 @@ func doInstall(g *gocui.Gui, hvstConfig *config.HarvesterConfig, webhooks Render
 	if hvstConfig.DataDiskFormatOpts != "" {
 		env = append(env, fmt.Sprintf("HARVESTER_DATA_DISK_FORMAT_OPTS=%s", hvstConfig.DataDiskFormatOpts))
 	}
-	if hvstConfig.NoFormat != "" {
-		env = append(env, fmt.Sprintf("HARVESTER_NO_FORMAT=%s", hvstConfig.NoFormat))
+	if hvstConfig.NoFormat {
+		env = append(env, fmt.Sprintf("HARVESTER_NO_FORMAT=yes"))
 	}
 
 
