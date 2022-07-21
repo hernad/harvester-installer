@@ -4,6 +4,7 @@ ISOTEMP=""
 ISOMNT=/run/initramfs/live
 TARGET=/run/cos/target
 DATA_DISK_FSLABEL="HARV_LH_DEF"
+LOG_FILE=/var/log/harv_install.log
 
 # Update environment variables
 export ELEMENTAL_TARGET=$ELEMENTAL_DEVICE
@@ -387,21 +388,22 @@ fi
 
 clear_disk_label
 
+echo "harv_install log" > $LOG_FILE
 
 OPTS=""
 if [ "$HARVESTER_NO_FORMAT" == "yes" ]; then
   OPTS="--no-format"
-  echo "elemental NoFormat - preformated partitions COS_OEM, COS_STATE, COS_RECOVERY, COS_PERMANENT must exist"
+  echo "elemental NoFormat - preformated partitions COS_OEM, COS_STATE, COS_RECOVERY, COS_PERMANENT must exist" >> $LOG_FILE
 fi
 
-echo "HARVESTER envears:"
-set | grep HARVESTER_
-echo "ELEMENTAL envars:"
-set | grep ELEMENTAL_
-echo "--------------------------------------------------------------"
-echo "ELEMENTAL_TARGET=$install_device, QUIET=$QUIET, DEBUG=$DEBUG, OPTS=$OPTS"
-echo "Run elemental installer but do not let it fetch ISO and do not shutdown"
-ELEMENTAL_ISO="" ELEMENTAL_TARGET="$install_device" ELEMENTAL_POWEROFF="" elemental ${QUIET} ${DEBUG} ${OPTS} install
+echo "HARVESTER envears:" >> $LOG_FILE
+set | egrep "^HARVESTER_"  >> $LOG_FILE
+echo "ELEMENTAL envars:" >> $LOG_FILE
+set | egrep "^ELEMENTAL_" >> $LOG_FILE
+echo "--------------------------------------------------------------" >> $LOG_FILE
+echo "ELEMENTAL_TARGET=$install_device, QUIET=$QUIET, DEBUG=$DEBUG, OPTS=$OPTS" >> $LOG_FILE
+echo "Run elemental installer but do not let it fetch ISO and do not shutdown" >> $LOG_FILE
+ELEMENTAL_ISO="" ELEMENTAL_TARGET="$install_device" ELEMENTAL_POWEROFF="" elemental install ${QUIET} ${DEBUG} ${OPTS}
 
 # Format the data disk if needed
 do_data_disk_format
