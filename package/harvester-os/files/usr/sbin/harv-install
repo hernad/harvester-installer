@@ -3,7 +3,8 @@
 ISOTEMP=""
 ISOMNT=/run/initramfs/live
 TARGET=/run/cos/target
-DATA_DISK_FSLABEL="HARV_LH_DEFAULT"
+DATA_DISK_FSLABEL="HARV_LH_DEF"
+LOG_FILE=/var/log/harv_install.log
 
 # Update environment variables
 export ELEMENTAL_TARGET=$ELEMENTAL_DEVICE
@@ -359,8 +360,24 @@ do_data_disk_format()
     fi
 
     # Create one EXT4 partition
-    echo "Formatting $HARVESTER_DATA_DISK as data disk..."
-    mkfs.ext4 -F -L "$DATA_DISK_FSLABEL" "$HARVESTER_DATA_DISK"
+    local data_disk_format=$HARVESTER_DATA_DISK_FORMAT
+    local format_opts=""
+    if [ -z "$HARVESTER_DATA_DISK_FORMAT" ]; then
+	    data_disk_format="ext4"
+    fi
+    if [ "$HARVESTER_DATA_DISK_FORMAT" == "ext4" ];then
+            # force mke2fs to create filesystem, eiven if the specified device is not partition on o block special device
+	    format_opts="-F"
+    fi
+    if [ "$HARVESTER_DATA_DISK_FORMAT" == "xfs" ];then
+	    # force overwrite an existing file system
+	    format_opts="-f"
+    fi
+    if [ -n "$HARVESTER_DATA_DISK_FORMAT_OPTS" ]; then
+	    format_opts="$format_opts $HARVESTER_DATA_DISK_FORMAT_OPTS"
+    fi
+    echo "Formatting $HARVESTER_DATA_DISK ($data_disk_format, opts: $format_opts) as data disk..."
+    mkfs.${data_disk_format} $format_opts -L "$DATA_DISK_FSLABEL" "$HARVESTER_DATA_DISK"
 }
 
 trap cleanup exit
@@ -379,8 +396,22 @@ blkdeactivate --lvmoptions wholevg,retry --dmoptions force,retry --errors || tru
 
 clear_disk_label
 
-# Run elemental installer but do not let it fetch ISO and do not shutdown
-ELEMENTAL_ISO="" ELEMENTAL_TARGET="$install_device" ELEMENTAL_POWEROFF="" elemental ${QUIET} ${DEBUG} install
+echo "harv_install log" > $LOG_FILE
+
+OPTS=""
+if [ "$HARVESTER_NO_FORMAT" == "yes" ]; then
+  OPTS="--no-format --force --force-gpt"
+  echo "elemental NoFormat - preformated partitions COS_OEM, COS_STATE, COS_RECOVERY, COS_PERMANENT must exist" >> $LOG_FILE
+fi
+
+echo "HARVESTER envears:" >> $LOG_FILE
+set | egrep "^HARVESTER_"  >> $LOG_FILE
+echo "ELEMENTAL envars:" >> $LOG_FILE
+set | egrep "^ELEMENTAL_" >> $LOG_FILE
+echo "--------------------------------------------------------------" >> $LOG_FILE
+echo "ELEMENTAL_TARGET=$install_device, QUIET=$QUIET, DEBUG=$DEBUG, OPTS=$OPTS" >> $LOG_FILE
+echo "Run elemental installer but do not let it fetch ISO and do not shutdown" >> $LOG_FILE
+ELEMENTAL_ISO="" ELEMENTAL_TARGET="$install_device" ELEMENTAL_POWEROFF="" elemental install ${QUIET} ${DEBUG} ${OPTS}
 
 # Format the data disk if needed
 do_data_disk_format

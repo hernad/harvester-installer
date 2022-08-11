@@ -444,6 +444,16 @@ func doInstall(g *gocui.Gui, hvstConfig *config.HarvesterConfig, webhooks Render
 	if hvstConfig.DataDisk != "" {
 		env = append(env, fmt.Sprintf("HARVESTER_DATA_DISK=%s", hvstConfig.DataDisk))
 	}
+	if hvstConfig.DataDiskFormat != "" {
+		env = append(env, fmt.Sprintf("HARVESTER_DATA_DISK_FORMAT=%s", hvstConfig.DataDiskFormat))
+	}
+	if hvstConfig.DataDiskFormatOpts != "" {
+		env = append(env, fmt.Sprintf("HARVESTER_DATA_DISK_FORMAT_OPTS=%s", hvstConfig.DataDiskFormatOpts))
+	}
+	if hvstConfig.NoFormat {
+		env = append(env, fmt.Sprintf("HARVESTER_NO_FORMAT=yes"))
+	}
+
 
 	if err := execute(ctx, g, env, "/usr/sbin/harv-install"); err != nil {
 		webhooks.Handle(EventInstallFailed)
@@ -613,13 +623,14 @@ func systemIsBIOS() bool {
 
 func canChooseDataDisk() (bool, error) {
 	// TODO This is a copy of getDiskOptions(). Deduplicate these two
-	output, err := exec.Command("/bin/sh", "-c", `lsblk -r -o NAME,SIZE,TYPE | grep -w disk|cut -d ' ' -f 1,2`).CombinedOutput()
+	output, err := exec.Command("/bin/sh", "-c", `lsblk -r -o KNAME,SIZE,TYPE |egrep -w 'disk|lvm'|cut -d ' ' -f 1,2`).CombinedOutput()
 	if err != nil {
 		return false, err
 	}
 	lines := strings.Split(strings.TrimSuffix(string(output), "\n"), "\n")
 	var options []widgets.Option
 	for _, line := range lines {
+		logrus.Infof("canChooseDataDisk %s", line)
 		splits := strings.SplitN(line, " ", 2)
 		if len(splits) == 2 {
 			options = append(options, widgets.Option{

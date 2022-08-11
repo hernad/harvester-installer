@@ -320,7 +320,7 @@ func addDiskPanel(c *Console) error {
 }
 
 func getDiskOptions() ([]widgets.Option, error) {
-	output, err := exec.Command("/bin/sh", "-c", `lsblk -r -o NAME,SIZE,TYPE | grep -w disk|cut -d ' ' -f 1,2`).CombinedOutput()
+	output, err := exec.Command("/bin/sh", "-c", `lsblk -r -o KNAME,SIZE,TYPE | egrep -w 'disk|lvm'|cut -d ' ' -f 1,2`).CombinedOutput()
 	if err != nil {
 		return nil, err
 	}
