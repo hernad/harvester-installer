@@ -14,7 +14,7 @@ source ${SCRIPTS_DIR}/version-rancher
 source ${SCRIPTS_DIR}/version-harvester ${TOP_DIR}/../harvester
 source ${SCRIPTS_DIR}/version-monitoring
 
-BASE_OS_IMAGE="rancher/harvester-os:20220802"
+BASE_OS_IMAGE="rancher/harvester-os:20220811-39b7b30-dirty"
 HARVESTER_OS_IMAGE=rancher/harvester-os:$VERSION
 
 cd ${PACKAGE_HARVESTER_OS_DIR}
