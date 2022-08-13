@@ -1,7 +1,9 @@
 name: "Setup installer"
 stages:
   boot:
-    - commands:
+     name: setup installer sh
+     if: '! grep -q harvester.setupinstaller=false /proc/cmdline'
+     commands:
       - setup-installer.sh
   initramfs:
     - environment_file: "/etc/rancher/installer/env"
